@@ -17,6 +17,7 @@ data/
 .env
 .env.local
 .env.*.local
+.env.docker
 
 # Logs
 *.log

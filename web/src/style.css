@@ -604,6 +604,50 @@ a {
   flex-direction: column;
   min-width: 0;
 }
+
+/* --- Datasets --- */
+
+.ds-pane {
+  max-width: 60rem;
+}
+.sqlite-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.ds-upload-label,
+.ds-replace-label {
+  align-self: flex-start;
+  cursor: pointer;
+}
+.ds-sql {
+  min-height: 7rem;
+}
+.results {
+  margin-top: 0.5rem;
+}
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.results-table th,
+.results-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.results-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+}
 .hint {
   margin: 0.5rem 0;
   color: var(--muted);

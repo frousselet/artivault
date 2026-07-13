@@ -70,6 +70,10 @@ const EnvSchema = z.object({
   DATA_DIR: z.string().min(1).default('./data'),
   DATABASE_FILE: z.string().min(1).default('artivault.db'),
 
+  // Directory of the built SPA (web/dist). When present, the server serves it at
+  // the root with an index.html fallback so the GUI and API share one origin.
+  WEB_DIST_DIR: z.string().min(1).optional(),
+
   SESSION_SECRET: secret,
   CSRF_SECRET: secret,
   CAPABILITY_TOKEN_SECRET: secret,
@@ -80,6 +84,10 @@ const EnvSchema = z.object({
   LOCK_HEARTBEAT_SECONDS: z.coerce.number().int().positive().default(60),
   CAPABILITY_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(120),
   INVITATION_TTL_SECONDS: z.coerce.number().int().positive().default(604_800), // 7 days
+  OAUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600), // 1 hour
+  OAUTH_REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(7_776_000), // 90 days
+  DATASET_QUERY_MAX_ROWS: z.coerce.number().int().positive().default(1000),
+  DATASET_QUERY_MAX_BYTES: z.coerce.number().int().positive().default(1_000_000),
 
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -108,6 +116,14 @@ const databasePath =
       ? env.DATABASE_FILE
       : join(dataDir, env.DATABASE_FILE);
 
+// Built SPA directory. Defaults to `web/dist` at the repo root; overridable so a
+// container can point at wherever the assets were copied.
+const webDistDir = env.WEB_DIST_DIR
+  ? isAbsolute(env.WEB_DIST_DIR)
+    ? env.WEB_DIST_DIR
+    : resolve(repoRoot, env.WEB_DIST_DIR)
+  : resolve(repoRoot, 'web', 'dist');
+
 // Origins accepted for WebAuthn ceremonies (and CSRF). In development we also
 // accept the Vite dev server origin so the passkey flow works when the GUI is
 // served by Vite (:5173) and proxied to the API.
@@ -122,7 +138,9 @@ export const config = Object.freeze({
   ...env,
   repoRoot,
   dataDir,
+  datasetsDir: join(dataDir, 'datasets'),
   databasePath,
+  webDistDir,
   expectedOrigins,
   isProduction: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',

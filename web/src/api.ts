@@ -51,3 +51,15 @@ export const apiPatch = <T>(path: string, body?: unknown): Promise<T> =>
 export const apiPut = <T>(path: string, body?: unknown): Promise<T> =>
   write<T>('PUT', path, body ?? {});
 export const apiDelete = <T>(path: string): Promise<T> => write<T>('DELETE', path);
+
+/** POST a multipart FormData (file upload). The browser sets the content-type. */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = await ensureCsrf();
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'x-csrf-token': token },
+    body: formData,
+  });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}

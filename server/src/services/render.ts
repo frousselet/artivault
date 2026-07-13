@@ -17,9 +17,12 @@ const MARKDOWN_HEAD = `<!doctype html><html lang="en"><head><meta charset="utf-8
  * as authored; Markdown is rendered to HTML server-side and wrapped in a minimal
  * document. The output is always served through the sandboxed render path.
  */
-export function renderArtifactHtml(kind: ArtifactKind, content: string): string {
-  if (kind === 'markdown') return `${MARKDOWN_HEAD}${renderMarkdownToHtml(content)}</body></html>`;
-  return content;
+export function renderArtifactHtml(kind: ArtifactKind, content: string, bootstrap = ''): string {
+  if (kind === 'markdown') {
+    return `${MARKDOWN_HEAD}${bootstrap}${renderMarkdownToHtml(content)}</body></html>`;
+  }
+  if (kind === 'html') return `${bootstrap}${content}`;
+  return content; // svg: served as authored (no bootstrap injection)
 }
 
 /** Content-Type for the render response, given the artifact kind. */

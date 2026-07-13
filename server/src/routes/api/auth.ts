@@ -17,6 +17,7 @@ import {
   listCredentialsByUser,
 } from '../../services/credentials.js';
 import { findUsableInvitation } from '../../services/invitations.js';
+import { listAuthorizedClients, revokeClient } from '../../services/oauth.js';
 import { countUsers, createUser, getUserByEmail, getUserById } from '../../services/users.js';
 import type { User } from '../../types/domain.js';
 import { AppError, forbidden, unauthorized } from '../../util/http.js';
@@ -172,6 +173,27 @@ authRoutes.delete('/passkeys/:id', (c) => {
     actorKind: 'user',
     action: 'passkey.delete',
     detail: { id },
+  });
+  return c.json({ ok: true });
+});
+
+// --- Authorized MCP apps (OAuth clients, spec §13) ---
+authRoutes.get('/oauth-clients', (c) => {
+  const auth = getAuth(c);
+  if (!auth) throw unauthorized();
+  return c.json({ clients: listAuthorizedClients(auth.user.id) });
+});
+
+authRoutes.delete('/oauth-clients/:clientId', (c) => {
+  const auth = getAuth(c);
+  if (!auth) throw unauthorized();
+  const clientId = c.req.param('clientId');
+  if (!revokeClient(auth.user.id, clientId)) throw new AppError(404, 'not_found', 'app not found');
+  recordAudit({
+    actorId: auth.user.id,
+    actorKind: 'user',
+    action: 'oauth.revoke',
+    detail: { client: clientId },
   });
   return c.json({ ok: true });
 });

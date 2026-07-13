@@ -17,8 +17,15 @@ import {
   artifactAccess,
   canEdit,
   canView,
+  datasetAccess,
   isOwner,
 } from '../../services/authorization.js';
+import {
+  getDatasetById,
+  getLinkedDatasets,
+  linkDataset,
+  unlinkDataset,
+} from '../../services/datasets.js';
 import { acquireLock, getActiveLock, releaseLock } from '../../services/locks.js';
 import { renderArtifactHtml } from '../../services/render.js';
 import { listSharesWithGrantee, removeShare, setShare } from '../../services/shares.js';
@@ -288,4 +295,52 @@ artifactApiRoutes.delete('/:id/shares/:granteeId', (c) => {
     detail: { grantee: granteeId },
   });
   return c.json({ shares: listSharesWithGrantee('artifact', artifact.id) });
+});
+
+// --- Linked datasets (spec §6) ---
+artifactApiRoutes.get('/:id/datasets', (c) => {
+  const { userId, artifact } = loadForUser(c, c.req.param('id'), 'view');
+  const datasets = getLinkedDatasets(artifact.id).map((d) => ({
+    id: d.id,
+    name: d.name,
+    storage: d.storage,
+    format: d.format,
+    currentVersion: d.current_version,
+    access: datasetAccess(d, userId) ?? 'read',
+  }));
+  return c.json({ datasets });
+});
+
+artifactApiRoutes.post('/:id/datasets', async (c) => {
+  const { userId, artifact } = loadForUser(c, c.req.param('id'), 'edit');
+  const body = await readBody(c);
+  const datasetId = typeof body.datasetId === 'string' ? body.datasetId : '';
+  const dataset = datasetId ? getDatasetById(datasetId) : null;
+  if (!dataset) throw notFound('dataset not found');
+  if (!canView(datasetAccess(dataset, userId))) throw forbidden('no access to that dataset');
+  linkDataset(artifact.id, dataset.id);
+  recordAudit({
+    actorId: userId,
+    actorKind: 'user',
+    action: 'artifact.link_dataset',
+    resourceKind: 'artifact',
+    resourceId: artifact.id,
+    detail: { dataset: dataset.id },
+  });
+  return c.json({ ok: true }, 201);
+});
+
+artifactApiRoutes.delete('/:id/datasets/:datasetId', (c) => {
+  const { userId, artifact } = loadForUser(c, c.req.param('id'), 'edit');
+  const datasetId = c.req.param('datasetId');
+  if (!unlinkDataset(artifact.id, datasetId)) throw notFound('link not found');
+  recordAudit({
+    actorId: userId,
+    actorKind: 'user',
+    action: 'artifact.unlink_dataset',
+    resourceKind: 'artifact',
+    resourceId: artifact.id,
+    detail: { dataset: datasetId },
+  });
+  return c.json({ ok: true });
 });

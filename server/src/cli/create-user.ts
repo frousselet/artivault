@@ -57,9 +57,8 @@ console.log(
   ),
 );
 console.log(
-  '\nNote: passkey registration/login is not implemented yet (spec §10), so this\n' +
-    'account cannot sign in through the GUI until that flow is built. The record and\n' +
-    'its role are in place for when it is.',
+  `\nNext: open the app, enter ${email}, and choose "Register a passkey" to\n` +
+    'attach a credential to this account and sign in.',
 );
 
 closeDb();

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 // Configure a minimal, in-memory environment BEFORE importing app modules, which
@@ -12,6 +15,12 @@ process.env.SESSION_SECRET = 'test-secret-session-0000000000000000';
 process.env.CSRF_SECRET = 'test-secret-csrf-0000000000000000';
 process.env.CAPABILITY_TOKEN_SECRET = 'test-secret-capability-0000000000';
 process.env.OAUTH_TOKEN_SECRET = 'test-secret-oauth-00000000000000000';
+
+// A deterministic built-SPA directory, so static serving and the SPA fallback are
+// exercised regardless of whether `web/dist` was built in this checkout.
+const webDist = mkdtempSync(join(tmpdir(), 'artivault-web-'));
+writeFileSync(join(webDist, 'index.html'), '<!doctype html><body><div id="app"></div></body>');
+process.env.WEB_DIST_DIR = webDist;
 
 const { buildApp } = await import('../src/app.js');
 const { getDb } = await import('../src/db/index.js');
@@ -54,7 +63,23 @@ test('oauth discovery advertises PKCE and the endpoints', async () => {
   assert.deepEqual(meta.code_challenge_methods_supported, ['S256']);
 });
 
-test('unknown routes return a JSON 404', async () => {
-  const res = await app.request('/nope');
+test('an unknown API route returns a JSON 404, never the SPA shell', async () => {
+  const res = await app.request('/api/does-not-exist');
   assert.equal(res.status, 404);
+  assert.match(res.headers.get('content-type') ?? '', /application\/json/);
+  const body = (await res.json()) as { error: string };
+  assert.equal(body.error, 'not_found');
+});
+
+test('the built SPA is served at the root and as a deep-link fallback', async () => {
+  const root = await app.request('/');
+  assert.equal(root.status, 200);
+  assert.match(await root.text(), /id="app"/);
+
+  // A client-side route (e.g. /invite/<token>) must return the shell, not a 404,
+  // so the SPA can handle routing.
+  const deep = await app.request('/invite/some-token');
+  assert.equal(deep.status, 200);
+  assert.match(deep.headers.get('content-type') ?? '', /text\/html/);
+  assert.match(await deep.text(), /id="app"/);
 });

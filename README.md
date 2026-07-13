@@ -101,6 +101,45 @@ npm run dev:web
 
 The first registered account becomes the **admin** (bootstrap rule).
 
+## Run with Docker
+
+The image builds the SPA and the backend, then serves **both on one origin** — no
+separate web server. Only Docker is required (no local Node or C/C++ toolchain);
+the `better-sqlite3` native addon is compiled inside the build stage.
+
+```bash
+# 1. Create your deployment config and set the secrets
+cp .env.docker.example .env.docker
+#   edit .env.docker — generate each *_SECRET with:  openssl rand -base64 48
+
+# 2. Build the image and start the container (detached)
+docker compose up -d --build          # → http://localhost:8787
+
+# 3. Create the admin, then open the app to add its passkey
+docker compose exec app \
+  node server/dist/cli/create-user.js --email you@example.com --admin
+```
+
+Then browse to `http://localhost:8787`, enter that email and **Register a
+passkey**. Migrations run automatically on start; the SQLite database and
+per-dataset files persist in the `artivault-data` volume.
+
+Everyday operations:
+
+```bash
+docker compose logs -f app            # follow logs
+docker compose up -d --build          # rebuild & restart after pulling changes
+docker compose down                   # stop (keeps the data volume)
+docker compose down -v                # stop and DELETE all data
+```
+
+`docker-compose.yml` pins the container invariants (`HOST=0.0.0.0`, `PORT=8787`,
+`DATA_DIR=/data`, `NODE_ENV=production`); everything else comes from
+`.env.docker`. For a real deployment behind a TLS-terminating reverse proxy, set
+`PUBLIC_BASE_URL` / `EXPECTED_ORIGIN` to your public HTTPS URL, `RP_ID` to the
+bare domain, and `TRUST_PROXY=true` — then point the proxy at the container's
+port `8787`.
+
 ## Scripts
 
 Run from the repository root:

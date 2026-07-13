@@ -1,4 +1,11 @@
-import { deletePasskey, listPasskeys, type Passkey } from './account.js';
+import {
+  deletePasskey,
+  listOAuthClients,
+  listPasskeys,
+  type OAuthClient,
+  type Passkey,
+  revokeOAuthClient,
+} from './account.js';
 import {
   type AdminUser,
   createUser as adminCreateUser,
@@ -16,18 +23,39 @@ import {
   deleteArtifact,
   getArtifact,
   listArtifacts,
-  listShares,
   previewArtifact,
-  type Share,
   setVisibility,
-  shareArtifact,
-  unshareArtifact,
   updateArtifact,
   type Visibility,
 } from './artifacts.js';
 import { registerPasskey, type SessionUser } from './auth.js';
+import {
+  createInlineDataset,
+  createSqliteDataset,
+  type Dataset,
+  type DatasetSummary,
+  deleteDataset,
+  getDataset,
+  type LinkedDataset,
+  linkDataset,
+  listArtifactDatasets,
+  listDatasets,
+  listDatasetVersions,
+  type QueryResult,
+  queryDataset,
+  replaceSqliteFile,
+  unlinkDataset,
+  updateDataset,
+} from './datasets.js';
 import { byId, debounce, escapeHtml } from './dom.js';
 import { icon } from './icons.js';
+import {
+  listShares,
+  type ResourceKind,
+  type Share,
+  shareResource,
+  unshareResource,
+} from './shares.js';
 import { searchUsers, type UserHit } from './users.js';
 
 const KINDS: ArtifactKind[] = ['html', 'svg', 'markdown'];
@@ -38,7 +66,7 @@ export interface AppHost {
   onSignOut: () => void | Promise<void>;
 }
 
-type ViewName = 'artifacts' | 'account' | 'admin';
+type ViewName = 'artifacts' | 'datasets' | 'account' | 'admin';
 
 let host: AppHost;
 let viewEl: HTMLElement;
@@ -74,6 +102,7 @@ function shellHtml(): string {
     <div class="app-body">
       <nav class="sidebar" id="sidebar">
         <button class="nav-item" data-view="artifacts" type="button">${icon('artifacts')}<span>Artifacts</span></button>
+        <button class="nav-item" data-view="datasets" type="button">${icon('datasets')}<span>Datasets</span></button>
         <button class="nav-item" data-view="account" type="button">${icon('account')}<span>Account</span></button>
         ${adminNav}
       </nav>
@@ -112,6 +141,7 @@ function navigate(view: ViewName): void {
   closeNav();
   if (view === 'account') void showAccount();
   else if (view === 'admin') void showAdmin();
+  else if (view === 'datasets') void showDatasets();
   else void showDashboard();
 }
 
@@ -243,6 +273,7 @@ async function showEditor(id: string | null): Promise<void> {
         ${accessNote}
       </div>
       <div class="row">
+        ${canWrite ? `<button id="datasets" class="btn ghost sm" type="button"${saved ? '' : ' disabled'}>Datasets</button>` : ''}
         ${owner ? `<button id="share" class="btn ghost sm" type="button"${saved ? '' : ' disabled'}>Share</button>` : ''}
         ${owner ? `<button id="visibility" class="btn ghost sm" type="button"${saved ? '' : ' disabled'}></button>` : ''}
         <button id="open" class="btn ghost sm" type="button"${saved ? '' : ' disabled'}>Open ↗</button>
@@ -292,7 +323,11 @@ async function showEditor(id: string | null): Promise<void> {
   syncVisibilityButton();
 
   byId('share')?.addEventListener('click', () => {
-    if (state.id) void showShareModal(state.id, state.name);
+    if (state.id) void showShareModal('artifact', state.id, state.name);
+  });
+
+  byId('datasets')?.addEventListener('click', () => {
+    if (state.id) void showLinkedDatasetsModal(state.id, state.name);
   });
 
   const refreshPreview = debounce(() => {
@@ -392,7 +427,7 @@ function openModal(title: string, bodyHtml: string): void {
   root.querySelector<HTMLElement>('[data-close]')?.addEventListener('click', close);
 }
 
-async function showShareModal(artifactId: string, name: string): Promise<void> {
+async function showShareModal(kind: ResourceKind, id: string, name: string): Promise<void> {
   openModal(
     `Share “${name}”`,
     `<form id="share-form" class="share-form">
@@ -429,12 +464,12 @@ async function showShareModal(artifactId: string, name: string): Promise<void> {
     for (const s of shares) {
       byId<HTMLSelectElement>(`perm-${s.granteeId}`)?.addEventListener('change', (ev) => {
         const perm = (ev.target as HTMLSelectElement).value as 'read' | 'write';
-        shareArtifact(artifactId, s.email, perm)
+        shareResource(kind, id, s.email, perm)
           .then(render)
           .catch((err: unknown) => smsg((err as Error).message, true));
       });
       byId(`unshare-${s.granteeId}`)?.addEventListener('click', () => {
-        unshareArtifact(artifactId, s.granteeId)
+        unshareResource(kind, id, s.granteeId)
           .then(render)
           .catch((err: unknown) => smsg((err as Error).message, true));
       });
@@ -499,7 +534,7 @@ async function showShareModal(artifactId: string, name: string): Promise<void> {
       smsg('Pick a user to share with.', true);
       return;
     }
-    shareArtifact(artifactId, email, perm)
+    shareResource(kind, id, email, perm)
       .then((shares) => {
         render(shares);
         selected = null;
@@ -511,7 +546,7 @@ async function showShareModal(artifactId: string, name: string): Promise<void> {
   });
 
   try {
-    render(await listShares(artifactId));
+    render(await listShares(kind, id));
   } catch (err) {
     smsg((err as Error).message, true);
   }
@@ -548,7 +583,10 @@ async function showAccount(): Promise<void> {
     </div>
     <h3 class="section-title">Passkeys</h3>
     <p id="msg" class="hint"></p>
-    <section id="passkeys" class="grid"><p class="muted">Loading…</p></section>`;
+    <section id="passkeys" class="grid"><p class="muted">Loading…</p></section>
+    <h3 class="section-title">Connected apps</h3>
+    <p class="hint">Apps you have authorized to access your account over MCP.</p>
+    <section id="apps" class="grid"><p class="muted">Loading…</p></section>`;
 
   const msg = (text: string, isError = false): void => {
     const m = byId('msg');
@@ -590,6 +628,40 @@ async function showAccount(): Promise<void> {
   } catch (err) {
     if (listEl) listEl.innerHTML = errorState((err as Error).message);
   }
+
+  const appsEl = byId('apps');
+  try {
+    const clients = await listOAuthClients();
+    if (appsEl) {
+      appsEl.innerHTML =
+        clients.length === 0
+          ? emptyState('No connected apps', 'Authorize an MCP client to see it here.')
+          : clients.map(appRow).join('');
+      for (const client of clients) {
+        byId(`revoke-${client.clientId}`)?.addEventListener('click', async () => {
+          if (!window.confirm('Revoke this app’s access?')) return;
+          try {
+            await revokeOAuthClient(client.clientId);
+            await showAccount();
+          } catch (err) {
+            msg((err as Error).message, true);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    if (appsEl) appsEl.innerHTML = errorState((err as Error).message);
+  }
+}
+
+function appRow(c: OAuthClient): string {
+  return `<article class="card">
+    <div class="card-body">
+      <div class="card-title">${escapeHtml(c.clientName ?? 'MCP client')}</div>
+      <div class="badges"><span class="badge badge--muted">authorized ${fmtDate(c.createdAt)}</span></div>
+    </div>
+    <div class="card-actions"><button id="revoke-${c.clientId}" class="btn danger sm" type="button">Revoke</button></div>
+  </article>`;
 }
 
 function passkeyRow(p: Passkey): string {
@@ -752,4 +824,353 @@ function userRow(u: AdminUser, selfId: string): string {
 
 function fmtDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString();
+}
+
+// --- Datasets (spec §12) ---
+
+async function showDatasets(): Promise<void> {
+  viewEl.innerHTML = `
+    <div class="view-head">
+      <h2>Datasets</h2>
+      <div class="row">
+        <button id="ds-new" class="btn" type="button">${icon('plus')} New dataset</button>
+        <label class="btn ghost sm ds-upload-label">Upload SQLite
+          <input id="ds-upload" type="file" accept=".sqlite,.db,.sqlite3" hidden />
+        </label>
+      </div>
+    </div>
+    <p id="ds-msg" class="hint"></p>
+    <section id="ds-list" class="grid"><p class="muted">Loading…</p></section>`;
+
+  const dmsg = (text: string, isError = false): void => {
+    const m = byId('ds-msg');
+    if (m) {
+      m.textContent = text;
+      m.classList.toggle('err', isError);
+    }
+  };
+
+  byId('ds-new')?.addEventListener('click', () => void showDatasetEditor(null));
+  byId<HTMLInputElement>('ds-upload')?.addEventListener('change', async (ev) => {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const name = window.prompt('Dataset name?', file.name.replace(/\.[^.]+$/, '')) ?? '';
+    if (!name.trim()) return;
+    dmsg('Uploading…');
+    try {
+      const created = await createSqliteDataset(name.trim(), file);
+      await showDatasetEditor(created.id);
+    } catch (err) {
+      dmsg((err as Error).message, true);
+    }
+  });
+
+  const listEl = byId('ds-list');
+  try {
+    const datasets = await listDatasets();
+    if (!listEl) return;
+    listEl.innerHTML =
+      datasets.length === 0
+        ? emptyState('No datasets yet', 'Create an inline dataset or upload a SQLite file.')
+        : datasets.map(datasetCard).join('');
+    for (const d of datasets) {
+      byId(`open-ds-${d.id}`)?.addEventListener('click', () => void showDatasetEditor(d.id));
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = errorState((err as Error).message);
+  }
+}
+
+function datasetCard(d: DatasetSummary): string {
+  const shareBadge =
+    d.access && d.access !== 'owner'
+      ? `<span class="badge badge--${d.access === 'write' ? 'active' : 'muted'}">shared: ${d.access}</span>`
+      : d.shareCount && d.shareCount > 0
+        ? `<span class="badge badge--muted">shared · ${d.shareCount}</span>`
+        : '';
+  return `<article class="card">
+    <div class="card-body">
+      <div class="card-title">${escapeHtml(d.name)}</div>
+      <div class="badges">
+        <span class="badge badge--markdown">${d.storage === 'inline' ? d.format : 'sqlite'}</span>
+        <span class="badge badge--muted">v${d.currentVersion}</span>
+        ${shareBadge}
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="open-ds-${d.id}" class="btn ghost sm" type="button">${d.access === 'read' ? 'View' : 'Open'}</button>
+    </div>
+  </article>`;
+}
+
+async function showDatasetEditor(id: string | null): Promise<void> {
+  setActiveNav('datasets');
+  let d: Dataset | null = null;
+  if (id) {
+    try {
+      d = await getDataset(id);
+    } catch (err) {
+      viewEl.innerHTML = errorState((err as Error).message);
+      return;
+    }
+  }
+  const owner = !d || d.access === 'owner';
+  const canWrite = !d || d.access === 'owner' || d.access === 'write';
+  const inline = !d || d.storage === 'inline';
+  const dsId = d?.id ?? null;
+  const dsName = d?.name ?? '';
+
+  viewEl.innerHTML = `
+    <div class="view-head">
+      <div class="row">
+        <button id="ds-back" class="btn ghost sm" type="button">← Datasets</button>
+        <span class="badge badge--muted">${d ? `v${d.currentVersion}` : 'new'}</span>
+        ${d && !owner ? `<span class="badge badge--${d.access === 'write' ? 'active' : 'private'}">${d.access === 'write' ? 'shared: write' : 'read-only'}</span>` : ''}
+      </div>
+      <div class="row">
+        ${dsId && owner ? '<button id="ds-share" class="btn ghost sm" type="button">Share</button>' : ''}
+        ${dsId && owner ? '<button id="ds-delete" class="btn danger sm" type="button">Delete</button>' : ''}
+        ${canWrite && inline ? '<button id="ds-save" class="btn" type="button">Save</button>' : ''}
+      </div>
+    </div>
+    <div class="pane ds-pane">
+      <div class="field-row">
+        <input id="ds-name" class="input" placeholder="Dataset name" />
+        ${
+          d
+            ? `<span class="badge badge--muted">${d.storage === 'inline' ? d.format : 'sqlite file'}</span>`
+            : '<select id="ds-format" class="input kind-select"><option value="csv">csv</option><option value="json">json</option></select>'
+        }
+      </div>
+      ${inline ? '<textarea id="ds-content" class="source" spellcheck="false" placeholder="CSV or JSON content…"></textarea>' : sqlitePanelHtml()}
+      <p id="ds-status" class="hint"></p>
+    </div>
+    ${d ? '<h3 class="section-title">Versions</h3><section id="ds-versions" class="list"></section>' : ''}`;
+
+  const nameEl = byId<HTMLInputElement>('ds-name');
+  if (nameEl) {
+    nameEl.value = dsName;
+    if (!canWrite) nameEl.disabled = true;
+  }
+  const status = (text: string, isError = false): void => {
+    const s = byId('ds-status');
+    if (s) {
+      s.textContent = text;
+      s.classList.toggle('err', isError);
+    }
+  };
+
+  if (inline) {
+    const contentEl = byId<HTMLTextAreaElement>('ds-content');
+    if (contentEl) {
+      contentEl.value = d?.content ?? '';
+      if (!canWrite) contentEl.readOnly = true;
+    }
+    byId('ds-save')?.addEventListener('click', async () => {
+      status('Saving…');
+      try {
+        if (!d) {
+          const format = (byId<HTMLSelectElement>('ds-format')?.value ?? 'csv') as 'csv' | 'json';
+          const created = await createInlineDataset({
+            name: nameEl?.value.trim() || 'Untitled',
+            format,
+            content: contentEl?.value ?? '',
+          });
+          await showDatasetEditor(created.id);
+          return;
+        }
+        const current = d;
+        const updated = await updateDataset(current.id, {
+          baseVersion: current.currentVersion,
+          content: contentEl?.value ?? '',
+          name: nameEl?.value.trim() || undefined,
+        });
+        d = updated;
+        status(`Saved — v${updated.currentVersion}`);
+        await loadDatasetVersions(updated.id);
+      } catch (err) {
+        status((err as Error).message, true);
+      }
+    });
+  } else if (dsId) {
+    wireSqlitePanel(dsId, d?.currentVersion ?? 1, status);
+  }
+
+  byId('ds-back')?.addEventListener('click', () => void showDatasets());
+  if (dsId) {
+    byId('ds-share')?.addEventListener('click', () => void showShareModal('dataset', dsId, dsName));
+    byId('ds-delete')?.addEventListener('click', async () => {
+      if (!window.confirm('Delete this dataset? This cannot be undone.')) return;
+      try {
+        await deleteDataset(dsId);
+        void showDatasets();
+      } catch (err) {
+        status((err as Error).message, true);
+      }
+    });
+    await loadDatasetVersions(dsId);
+  }
+}
+
+function sqlitePanelHtml(): string {
+  return `<div class="sqlite-panel">
+    <label class="btn ghost sm ds-replace-label">Replace SQLite file
+      <input id="ds-replace" type="file" accept=".sqlite,.db,.sqlite3" hidden />
+    </label>
+    <textarea id="ds-sql" class="source ds-sql" spellcheck="false" placeholder="SELECT * FROM …"></textarea>
+    <div class="row"><button id="ds-run" class="btn" type="button">Run query</button></div>
+    <div id="ds-results" class="results"></div>
+  </div>`;
+}
+
+function wireSqlitePanel(
+  datasetId: string,
+  currentVersion: number,
+  status: (t: string, e?: boolean) => void,
+): void {
+  byId<HTMLInputElement>('ds-replace')?.addEventListener('change', async (ev) => {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    status('Uploading…');
+    try {
+      const updated = await replaceSqliteFile(datasetId, file, currentVersion);
+      await showDatasetEditor(updated.id);
+    } catch (err) {
+      status((err as Error).message, true);
+    }
+  });
+  byId('ds-run')?.addEventListener('click', async () => {
+    const sql = byId<HTMLTextAreaElement>('ds-sql')?.value ?? '';
+    if (!sql.trim()) {
+      status('Enter a SELECT query.', true);
+      return;
+    }
+    status('Running…');
+    try {
+      const res = await queryDataset(datasetId, sql);
+      status(`${res.rows.length} row(s)${res.truncated ? ' (truncated)' : ''}`);
+      renderQueryResults(res);
+    } catch (err) {
+      status((err as Error).message, true);
+    }
+  });
+}
+
+function renderQueryResults(res: QueryResult): void {
+  const el = byId('ds-results');
+  if (!el) return;
+  if (res.rows.length === 0) {
+    el.innerHTML = '<p class="muted">No rows.</p>';
+    return;
+  }
+  const head = res.columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('');
+  const body = res.rows
+    .map((row) => {
+      const record = row as Record<string, unknown>;
+      const cells = res.columns
+        .map((col) => {
+          const value = record[col];
+          return `<td>${escapeHtml(value === null || value === undefined ? '' : String(value))}</td>`;
+        })
+        .join('');
+      return `<tr>${cells}</tr>`;
+    })
+    .join('');
+  el.innerHTML = `<div class="table-wrap"><table class="results-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+async function loadDatasetVersions(datasetId: string): Promise<void> {
+  const el = byId('ds-versions');
+  if (!el) return;
+  try {
+    const versions = await listDatasetVersions(datasetId);
+    el.innerHTML = versions
+      .map(
+        (v) =>
+          `<article class="card"><div class="card-body"><strong>v${v.version}</strong><span class="muted sm">${v.editorKind} · ${fmtDate(v.createdAt)}${v.note ? ` · ${escapeHtml(v.note)}` : ''}</span></div></article>`,
+      )
+      .join('');
+  } catch {
+    /* ignore version load errors */
+  }
+}
+
+async function showLinkedDatasetsModal(artifactId: string, name: string): Promise<void> {
+  openModal(
+    `Datasets for “${name}”`,
+    `<form id="link-form" class="share-form">
+      <select id="link-select" class="input combo"></select>
+      <button class="btn" type="submit">Link</button>
+    </form>
+    <p id="link-msg" class="hint"></p>
+    <div id="linked-list" class="share-list"><p class="muted">Loading…</p></div>`,
+  );
+
+  const lmsg = (text: string, isError = false): void => {
+    const m = byId('link-msg');
+    if (m) {
+      m.textContent = text;
+      m.classList.toggle('err', isError);
+    }
+  };
+
+  const renderLinked = (linked: LinkedDataset[]): void => {
+    const list = byId('linked-list');
+    if (!list) return;
+    list.innerHTML =
+      linked.length === 0
+        ? '<p class="muted">No datasets linked.</p>'
+        : linked
+            .map(
+              (d) =>
+                `<div class="share-row"><div class="share-who"><strong>${escapeHtml(d.name)}</strong><span class="muted sm">${d.storage === 'inline' ? d.format : 'sqlite'} · v${d.currentVersion}</span></div><button id="unlink-${d.id}" class="btn danger sm" type="button">Unlink</button></div>`,
+            )
+            .join('');
+    for (const d of linked) {
+      byId(`unlink-${d.id}`)?.addEventListener('click', () => {
+        unlinkDataset(artifactId, d.id)
+          .then(refresh)
+          .catch((err: unknown) => lmsg((err as Error).message, true));
+      });
+    }
+  };
+
+  async function refresh(): Promise<void> {
+    try {
+      const [mine, linked] = await Promise.all([listDatasets(), listArtifactDatasets(artifactId)]);
+      const linkedIds = new Set(linked.map((d) => d.id));
+      const options = mine.filter((d) => !linkedIds.has(d.id));
+      const selectEl = byId<HTMLSelectElement>('link-select');
+      if (selectEl) {
+        selectEl.innerHTML =
+          options.length === 0
+            ? '<option value="">— no other datasets —</option>'
+            : options.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+      }
+      renderLinked(linked);
+    } catch (err) {
+      lmsg((err as Error).message, true);
+    }
+  }
+
+  byId('link-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const datasetId = byId<HTMLSelectElement>('link-select')?.value ?? '';
+    if (!datasetId) {
+      lmsg('Select a dataset.', true);
+      return;
+    }
+    linkDataset(artifactId, datasetId)
+      .then(() => {
+        lmsg('Linked.');
+        return refresh();
+      })
+      .catch((err: unknown) => lmsg((err as Error).message, true));
+  });
+
+  await refresh();
 }

@@ -8,6 +8,8 @@ const ICONS: Record<string, string> = {
   account: '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
   admin: '<path d="M12 3l7 3v5c0 4.5-3 7.5-7 8-4-.5-7-3.5-7-8V6z"/><path d="M9 12l2 2 4-4"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  datasets:
+    '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 };
 
 export function icon(name: string, cls = 'icon'): string {

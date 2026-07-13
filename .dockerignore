@@ -1,0 +1,30 @@
+# Keep the build context lean and the image reproducible. In particular, never
+# copy host node_modules (a macOS-compiled better-sqlite3 would break in Linux)
+# or any build output — those are produced fresh inside the image.
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+
+# Runtime data and local secrets must never enter the image.
+data
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.env.*.local
+.env.docker
+
+# VCS, CI, editor and OS noise.
+.git
+.gitignore
+.github
+*.log
+coverage
+.DS_Store
+.idea
+.vscode
