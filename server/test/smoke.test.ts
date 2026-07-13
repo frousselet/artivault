@@ -34,9 +34,9 @@ test('readyz reports database connectivity', async () => {
   assert.equal(body.db, 'ok');
 });
 
-test('artifact render carries the sandbox CSP without allow-same-origin', async () => {
-  const res = await app.request('/artifact/example');
-  assert.equal(res.status, 200);
+test('the render route applies the sandbox CSP even for an unknown slug', async () => {
+  const res = await app.request('/artifact/does-not-exist');
+  assert.equal(res.status, 404);
   const csp = res.headers.get('content-security-policy') ?? '';
   assert.match(csp, /sandbox/);
   assert.match(csp, /allow-scripts/);

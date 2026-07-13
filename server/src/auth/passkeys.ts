@@ -19,6 +19,11 @@ import {
   listCredentialsByUser,
   updateCredentialCounter,
 } from '../services/credentials.js';
+import {
+  getInvitationById,
+  isInvitationUsable,
+  markInvitationUsed,
+} from '../services/invitations.js';
 import { getUserById } from '../services/users.js';
 import type { User } from '../types/domain.js';
 import { AppError, unauthorized } from '../util/http.js';
@@ -36,6 +41,7 @@ interface CeremonyClaims {
   challenge: string;
   type: CeremonyType;
   userId?: string;
+  invitationId?: string;
 }
 
 // The challenge is kept in a short-lived, signed, HttpOnly cookie so no server
@@ -88,6 +94,7 @@ function parseTransports(json: string | null): AuthenticatorTransportFuture[] | 
 export async function startPasskeyRegistration(
   c: Context,
   user: User,
+  opts: { invitationId?: string } = {},
 ): Promise<PublicKeyCredentialCreationOptionsJSON> {
   const existing = listCredentialsByUser(user.id);
   const options = await generateRegistrationOptions({
@@ -107,6 +114,7 @@ export async function startPasskeyRegistration(
     challenge: options.challenge,
     type: 'registration',
     userId: user.id,
+    invitationId: opts.invitationId,
   });
   return options;
 }
@@ -133,6 +141,15 @@ export async function finishPasskeyRegistration(
   }
 
   const { credential } = verification.registrationInfo;
+
+  // If this came from an invitation, re-check it is still usable and consume it
+  // together with adding the credential (single-use invite).
+  if (ceremony.invitationId) {
+    const inv = getInvitationById(ceremony.invitationId);
+    if (!inv || !isInvitationUsable(inv) || inv.user_id !== ceremony.userId) {
+      throw new AppError(400, 'invalid_invitation', 'this invitation is no longer valid');
+    }
+  }
   addCredential({
     userId: ceremony.userId,
     credentialId: credential.id,
@@ -141,6 +158,7 @@ export async function finishPasskeyRegistration(
     transports: credential.transports,
     deviceName,
   });
+  if (ceremony.invitationId) markInvitationUsed(ceremony.invitationId);
   clearCeremonyCookie(c);
 
   const user = getUserById(ceremony.userId);

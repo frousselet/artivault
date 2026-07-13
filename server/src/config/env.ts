@@ -79,6 +79,7 @@ const EnvSchema = z.object({
   LOCK_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   LOCK_HEARTBEAT_SECONDS: z.coerce.number().int().positive().default(60),
   CAPABILITY_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(120),
+  INVITATION_TTL_SECONDS: z.coerce.number().int().positive().default(604_800), // 7 days
 
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

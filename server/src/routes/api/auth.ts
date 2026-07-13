@@ -16,7 +16,8 @@ import {
   deleteCredential,
   listCredentialsByUser,
 } from '../../services/credentials.js';
-import { countUsers, createUser, getUserByEmail } from '../../services/users.js';
+import { findUsableInvitation } from '../../services/invitations.js';
+import { countUsers, createUser, getUserByEmail, getUserById } from '../../services/users.js';
 import type { User } from '../../types/domain.js';
 import { AppError, forbidden, unauthorized } from '../../util/http.js';
 
@@ -58,38 +59,59 @@ authRoutes.post('/logout', (c) => {
   return c.json({ ok: true });
 });
 
+// Validate an invitation link and reveal the invited email so the SPA can show
+// an onboarding screen. Public (the token is the capability), read-only.
+authRoutes.get('/invite/:token', (c) => {
+  const inv = findUsableInvitation(c.req.param('token'));
+  if (!inv)
+    throw new AppError(410, 'invalid_invitation', 'this invitation is invalid or has expired');
+  const user = getUserById(inv.user_id);
+  if (!user) throw new AppError(410, 'invalid_invitation', 'the invited account no longer exists');
+  if (countCredentialsByUser(user.id) > 0) {
+    throw new AppError(409, 'already_registered', 'this account already has a passkey');
+  }
+  return c.json({ email: user.email, displayName: user.display_name });
+});
+
 // --- Passkey registration (spec §10) ---
 authRoutes.post('/register/options', async (c) => {
   const body = await readBody(c);
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  const auth = getAuth(c);
+  const invite = typeof body.invite === 'string' ? body.invite : '';
 
-  let user: User;
-  if (auth) {
-    // Logged in: registering an additional device for the current user.
-    user = auth.user;
-  } else {
-    if (!email) throw new AppError(400, 'bad_request', 'email is required');
-    const existing = getUserByEmail(email);
-    if (existing) {
-      // Only allow claiming the first passkey; otherwise a session is required.
-      if (countCredentialsByUser(existing.id) > 0) {
-        throw forbidden('this account already has a passkey; sign in to add a device');
-      }
-      user = existing;
-    } else if (countUsers() === 0) {
-      // Bootstrap: the very first account becomes admin (spec §10).
-      const displayName =
-        typeof body.displayName === 'string' && body.displayName.trim()
-          ? body.displayName.trim()
-          : email;
-      user = createUser({ email, displayName });
-    } else {
-      throw forbidden('registration is closed; ask an admin to create your account');
+  // 1. Invitation link — the token identifies the account (takes precedence).
+  if (invite) {
+    const inv = findUsableInvitation(invite);
+    if (!inv) {
+      throw new AppError(400, 'invalid_invitation', 'this invitation is invalid or has expired');
     }
+    const user = getUserById(inv.user_id);
+    if (!user) {
+      throw new AppError(400, 'invalid_invitation', 'the invited account no longer exists');
+    }
+    if (countCredentialsByUser(user.id) > 0) {
+      throw forbidden('this account already has a passkey');
+    }
+    return c.json(await startPasskeyRegistration(c, user, { invitationId: inv.id }));
   }
 
-  return c.json(await startPasskeyRegistration(c, user));
+  // 2. Signed in — registering an additional device for the current user.
+  const auth = getAuth(c);
+  if (auth) {
+    return c.json(await startPasskeyRegistration(c, auth.user));
+  }
+
+  // 3. Bootstrap — the very first account self-registers by email and becomes admin.
+  if (countUsers() === 0) {
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (!email) throw new AppError(400, 'bad_request', 'email is required');
+    const displayName =
+      typeof body.displayName === 'string' && body.displayName.trim()
+        ? body.displayName.trim()
+        : email;
+    return c.json(await startPasskeyRegistration(c, createUser({ email, displayName })));
+  }
+
+  throw forbidden('registration requires an invitation — ask an admin for a link');
 });
 
 authRoutes.post('/register/verify', async (c) => {

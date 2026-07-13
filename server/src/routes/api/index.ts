@@ -5,6 +5,7 @@ import { artifactApiRoutes } from './artifacts.js';
 import { authRoutes } from './auth.js';
 import { datasetApiRoutes } from './datasets.js';
 import { renderDataRoutes } from './render-data.js';
+import { userApiRoutes } from './users.js';
 
 export const apiRoutes = new Hono();
 
@@ -18,4 +19,5 @@ apiRoutes.use('*', requireCsrf);
 apiRoutes.route('/auth', authRoutes);
 apiRoutes.route('/artifacts', artifactApiRoutes);
 apiRoutes.route('/datasets', datasetApiRoutes);
+apiRoutes.route('/users', userApiRoutes);
 apiRoutes.route('/admin', adminRoutes);

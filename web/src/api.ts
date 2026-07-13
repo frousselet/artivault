@@ -12,23 +12,6 @@ async function ensureCsrf(): Promise<string> {
   return csrfToken;
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { accept: 'application/json' } });
-  if (!res.ok) throw await toError(res);
-  return (await res.json()) as T;
-}
-
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const token = await ensureCsrf();
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-csrf-token': token },
-    body: JSON.stringify(body ?? {}),
-  });
-  if (!res.ok) throw await toError(res);
-  return (await res.json()) as T;
-}
-
 async function toError(res: Response): Promise<Error> {
   let detail = `HTTP ${res.status}`;
   try {
@@ -39,3 +22,32 @@ async function toError(res: Response): Promise<Error> {
   }
   return new Error(detail);
 }
+
+export async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(path, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
+
+type WriteMethod = 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
+async function write<T>(method: WriteMethod, path: string, body?: unknown): Promise<T> {
+  const token = await ensureCsrf();
+  const headers: Record<string, string> = { accept: 'application/json', 'x-csrf-token': token };
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, init);
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
+
+export const apiPost = <T>(path: string, body?: unknown): Promise<T> =>
+  write<T>('POST', path, body ?? {});
+export const apiPatch = <T>(path: string, body?: unknown): Promise<T> =>
+  write<T>('PATCH', path, body ?? {});
+export const apiPut = <T>(path: string, body?: unknown): Promise<T> =>
+  write<T>('PUT', path, body ?? {});
+export const apiDelete = <T>(path: string): Promise<T> => write<T>('DELETE', path);

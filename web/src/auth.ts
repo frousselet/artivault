@@ -1,5 +1,5 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { apiPost } from './api.js';
+import { apiGet, apiPost } from './api.js';
 
 export interface SessionUser {
   id: string;
@@ -30,5 +30,24 @@ export async function loginPasskey(email: string): Promise<SessionUser> {
   const optionsJSON = await apiPost<AuthenticationOptions>('/api/auth/login/options', { email });
   const response = await startAuthentication({ optionsJSON });
   const result = await apiPost<AuthResult>('/api/auth/login/verify', { response });
+  return result.user;
+}
+
+export interface InviteInfo {
+  email: string;
+  displayName: string;
+}
+
+/** Look up an invitation token to show who it is for (throws if invalid/expired). */
+export const fetchInvite = (token: string): Promise<InviteInfo> =>
+  apiGet<InviteInfo>(`/api/auth/invite/${encodeURIComponent(token)}`);
+
+/** Accept an invitation: register the first passkey for the invited account and sign in. */
+export async function registerWithInvite(token: string): Promise<SessionUser> {
+  const optionsJSON = await apiPost<RegistrationOptions>('/api/auth/register/options', {
+    invite: token,
+  });
+  const response = await startRegistration({ optionsJSON });
+  const result = await apiPost<AuthResult>('/api/auth/register/verify', { response });
   return result.user;
 }

@@ -132,6 +132,16 @@ export interface OAuthToken {
   created_at: number;
 }
 
+export interface Invitation {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  created_by: string | null;
+  expires_at: number;
+  used_at: number | null;
+  created_at: number;
+}
+
 export interface AuditEntry {
   id: string;
   actor_id: string | null;
