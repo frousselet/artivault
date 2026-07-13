@@ -1,45 +1,36 @@
 # Artivault — single-container deployment (API + GUI on one origin).
+# All configuration lives in .env.docker (copy it from .env.docker.example):
 #
-#   1. cp .env.docker.example .env.docker   &&   edit the secrets
-#   2. docker compose up -d --build
-#   3. Create the admin — this prints a single-use invitation link:
-#        docker compose exec app node server/dist/cli/create-user.js \
-#          --email you@example.com --admin
-#      Open that link in a browser to register the passkey, then sign in.
+#   cp .env.docker.example .env.docker            # then edit the secrets
+#   docker compose --env-file .env.docker up -d --build
 #
-# App: http://localhost:8787  (change the host port in `ports` below if needed).
+# Create the first admin (prints an invitation link to open in a browser):
+#   docker compose exec app node server/dist/cli/create-user.js --email you@example.com --admin
+#   docker compose exec app node server/dist/cli/invite.js      --email you@example.com  # re-issue
 
 services:
   app:
     build:
       context: .
       args:
-        # Bump to try a newer Node base without editing the Dockerfile.
-        NODE_VERSION: "26"
+        NODE_VERSION: "${NODE_VERSION:-26}"
     image: artivault:local
     restart: unless-stopped
+    # Injects the whole file (secrets, origin, RP, …) into the container.
     env_file:
-      - .env.docker
+      - .env
     environment:
-      # Container invariants — these override anything in .env.docker.
+      # Container invariants — fixed here so they can't be misconfigured.
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: "8787"
       DATA_DIR: /data
+      # Listen port, kept in sync with the published port below and defaulted so
+      # the stack runs before any editing. Health check lives in the image.
+      PORT: "${PORT:-8787}"
     ports:
-      - "8787:8787"
+      - "${PORT:-8787}:${PORT:-8787}"
     volumes:
       - artivault-data:/data
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:8787/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
 volumes:
   artivault-data:

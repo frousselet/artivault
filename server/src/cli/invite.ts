@@ -23,9 +23,15 @@ if (!email) fail('Missing --email.');
 // Make sure the schema exists (safe if already migrated).
 runMigrations(getDb());
 
+// Suggest the sibling command in the form that works here: the built JS when run
+// from dist (Docker/production), or the npm script when run from source (dev).
+const createCmd = import.meta.url.includes('/dist/')
+  ? 'node server/dist/cli/create-user.js'
+  : 'npm run create-user --';
+
 const user = getUserByEmail(email);
 if (!user) {
-  fail(`No user with email ${email}.\nCreate one with:  npm run create-user -- --email ${email}`);
+  fail(`No user with email ${email}.\nCreate one with:  ${createCmd} --email ${email}`);
 }
 
 // An invitation only sets up the FIRST passkey; the server rejects it otherwise,

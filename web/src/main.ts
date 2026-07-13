@@ -36,8 +36,6 @@ function signedOutView(): void {
     <div class="auth-screen">
       <div class="brand brand--lg">${icon('brand', 'brand-mark')}<span>Artivault</span></div>
       <div class="auth-card">
-        <h1>Welcome back</h1>
-        <p class="tag">Sign in to your vault with a passkey.</p>
         <button id="login" class="btn block" type="button">Sign in with a passkey</button>
         <p id="msg" class="hint"></p>
       </div>

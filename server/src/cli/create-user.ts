@@ -41,10 +41,16 @@ if (values.admin) {
 // Make sure the schema exists (safe if already migrated).
 runMigrations(getDb());
 
+// Suggest the sibling command in the form that works here: the built JS when run
+// from dist (Docker/production), or the npm script when run from source (dev).
+const inviteCmd = import.meta.url.includes('/dist/')
+  ? 'node server/dist/cli/invite.js'
+  : 'npm run invite --';
+
 if (getUserByEmail(email)) {
   fail(
     `A user with email ${email} already exists.\n` +
-      `Regenerate its invitation link with:  npm run invite -- --email ${email}`,
+      `Regenerate its invitation link with:  ${inviteCmd} --email ${email}`,
   );
 }
 

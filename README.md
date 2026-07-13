@@ -114,12 +114,12 @@ separate web server. Only Docker is required (no local Node or C/C++ toolchain);
 the `better-sqlite3` native addon is compiled inside the build stage.
 
 ```bash
-# 1. Create your deployment config and set the secrets
+# 1. Create your config (the single source of truth) and set the secrets
 cp .env.docker.example .env.docker
 #   edit .env.docker — generate each *_SECRET with:  openssl rand -base64 48
 
 # 2. Build the image and start the container (detached)
-docker compose up -d --build          # → http://localhost:8787
+docker compose --env-file .env.docker up -d --build     # → http://localhost:8787
 
 # 3. Create the admin — this prints a single-use invitation link
 docker compose exec app \
@@ -131,25 +131,26 @@ browser and **Register a passkey**. From then on, sign in with a single click �
 no email, no password. Migrations run automatically on start; the SQLite database
 and per-dataset files persist in the `artivault-data` volume.
 
-Everyday operations:
+Everything is configured from **`.env.docker`** — port, public origin, Relying
+Party, Node version and secrets — which `docker compose` reads via `--env-file`.
+`docker-compose.yml` only pins the container invariants (`HOST=0.0.0.0`,
+`DATA_DIR=/data`, `NODE_ENV=production`). To publish on another port, set `PORT`
+there (and the URLs to match). Behind a TLS-terminating reverse proxy, set
+`PUBLIC_BASE_URL` / `EXPECTED_ORIGIN` to your public HTTPS URL, `RP_ID` to the
+bare domain, and `TRUST_PROXY=true`, then point the proxy at the container.
+
+Everyday operations (all reading the same `.env.docker`):
 
 ```bash
-docker compose logs -f app            # follow logs
-docker compose up -d --build          # rebuild & restart after pulling changes
-docker compose down                   # stop (keeps the data volume)
-docker compose down -v                # stop and DELETE all data
+docker compose --env-file .env.docker up -d --build   # rebuild & restart after changes
+docker compose logs -f app                            # follow logs
+docker compose down                                   # stop (keeps the data volume)
+docker compose down -v                                # stop and DELETE all data
 
-# User management (each invite command prints a single-use link to open):
+# User management (each command prints a single-use link to open):
 docker compose exec app node server/dist/cli/create-user.js --email new@you.com
 docker compose exec app node server/dist/cli/invite.js --email someone@you.com   # regenerate
 ```
-
-`docker-compose.yml` pins the container invariants (`HOST=0.0.0.0`, `PORT=8787`,
-`DATA_DIR=/data`, `NODE_ENV=production`); everything else comes from
-`.env.docker`. For a real deployment behind a TLS-terminating reverse proxy, set
-`PUBLIC_BASE_URL` / `EXPECTED_ORIGIN` to your public HTTPS URL, `RP_ID` to the
-bare domain, and `TRUST_PROXY=true` — then point the proxy at the container's
-port `8787`.
 
 ## Scripts
 
