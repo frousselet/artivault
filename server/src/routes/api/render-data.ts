@@ -1,10 +1,27 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { verifyCapabilityToken } from '../../security/capability-tokens.js';
 import { getDatasetById, getLinkedDatasets, queryDataset } from '../../services/datasets.js';
 import type { Dataset } from '../../types/domain.js';
 import { AppError } from '../../util/http.js';
 
 export const renderDataRoutes = new Hono();
+
+// A rendered artifact lives in a sandbox with an opaque origin (no
+// `allow-same-origin`, see security/csp.ts), so its fetch to these endpoints is
+// cross-origin with `Origin: null`. Allow any origin: the capability token in the
+// URL is the grant and no cookies are involved, so `*` (non-credentialed) is safe
+// — and it deliberately keeps the session cookie out of dataset access. This also
+// answers the CORS preflight for the JSON `POST /:token/query`.
+renderDataRoutes.use(
+  '*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type'],
+    maxAge: 86_400,
+  }),
+);
 
 // Data access for a sandboxed artifact via capability token (spec §11, §12). No
 // session/cookie: the token is the grant, read-only, bound to an artifact+dataset.

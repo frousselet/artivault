@@ -24,6 +24,7 @@ const { createUser } = await import('../src/services/users.js');
 const { createArtifact } = await import('../src/services/artifacts.js');
 const { setShare } = await import('../src/services/shares.js');
 const { datasetAccess } = await import('../src/services/authorization.js');
+const { mintCapabilityToken } = await import('../src/security/capability-tokens.js');
 const ds = await import('../src/services/datasets.js');
 
 runMigrations(getDb());
@@ -130,6 +131,45 @@ test('linking an artifact propagates its access to the dataset (spec §8)', () =
 
   setShare('artifact', a.id, other.id, 'write', owner.id);
   assert.equal(datasetAccess(d, other.id), 'write');
+});
+
+test('render-data is reachable from the sandbox (opaque origin) via CORS', async () => {
+  const d = ds.createInlineDataset({
+    ownerId: owner.id,
+    name: 'RD',
+    format: 'csv',
+    content: 'a\n1',
+    editorId: owner.id,
+    editorKind: 'user',
+  });
+  const a = createArtifact({
+    ownerId: owner.id,
+    name: 'RDart',
+    kind: 'html',
+    content: '<p>x</p>',
+    editorId: owner.id,
+    editorKind: 'user',
+  });
+  ds.linkDataset(a.id, d.id);
+  const token = await mintCapabilityToken({
+    artifactId: a.id,
+    datasetId: d.id,
+    renderNonce: 'nonce',
+  });
+
+  // The rendered artifact fetches with Origin: null (opaque sandbox origin).
+  const res = await app.request(`/api/render-data/${token}`, { headers: { origin: 'null' } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  assert.equal(await res.text(), 'a\n1');
+
+  // The SQLite POST /query path needs a passing CORS preflight.
+  const preflight = await app.request(`/api/render-data/${token}/query`, {
+    method: 'OPTIONS',
+    headers: { origin: 'null', 'access-control-request-method': 'POST' },
+  });
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(preflight.headers.get('access-control-allow-methods') ?? '', /POST/);
 });
 
 test('the dataset API requires auth; owner can create inline over HTTP', async () => {

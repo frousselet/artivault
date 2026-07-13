@@ -135,3 +135,30 @@ test('the MCP endpoint requires a bearer and completes the handshake', async () 
   const body = (await res.json()) as { result?: { serverInfo?: { name?: string } } };
   assert.equal(body.result?.serverInfo?.name, 'artivault');
 });
+
+test('the dataset render guide is discoverable and returns the contract', async () => {
+  const { accessToken } = oauth.issueTokens(user.id, 'guide-client', 'mcp');
+  const headers = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    authorization: `Bearer ${accessToken}`,
+  };
+  const rpc = (id: number, method: string, params: unknown) =>
+    app.request('/mcp', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    });
+
+  const listRes = await rpc(1, 'tools/list', {});
+  const list = (await listRes.json()) as { result?: { tools?: { name: string }[] } };
+  const names = (list.result?.tools ?? []).map((t) => t.name);
+  assert.ok(names.includes('get_dataset_render_guide'), 'guide tool is registered');
+
+  const callRes = await rpc(2, 'tools/call', {
+    name: 'get_dataset_render_guide',
+    arguments: {},
+  });
+  const call = (await callRes.json()) as { result?: { content?: { text?: string }[] } };
+  assert.match(call.result?.content?.[0]?.text ?? '', /window\.ARTIVAULT/);
+});

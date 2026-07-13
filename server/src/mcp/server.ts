@@ -41,6 +41,60 @@ import { AppError } from '../util/http.js';
 const base = config.PUBLIC_BASE_URL.replace(/\/+$/, '');
 const renderUrl = (slug: string) => `${base}/artifact/${slug}`;
 
+// How a rendered artifact must consume its linked datasets (spec §11/§12). Exposed
+// as a tool and referenced from tool descriptions so an agent writing artifact
+// HTML knows the contract instead of guessing (or shipping a dead placeholder).
+const DATASET_RENDER_GUIDE = `Using linked datasets inside an artifact (html or markdown)
+
+When an artifact has one or more linked datasets, Artivault injects this global
+into the rendered page BEFORE your content runs:
+
+  window.ARTIVAULT = { datasets: [ { id, name, format, storage, url, queryUrl } ] }
+
+The object holds only access URLs (each carries a short-lived capability token) —
+NOT the data itself. Your artifact must fetch the data at runtime and render it.
+
+- storage "inline" (format "csv" or "json"): GET the dataset's url -> the raw CSV
+  text, or the parsed JSON.
+- storage "sqlite_file": POST the dataset's queryUrl with a JSON body { sql } ->
+  { columns, rows, truncated }. Read-only SELECT / WITH queries only.
+
+Use a plain fetch (no credentials — the token in the URL is the grant). Relative
+URLs work. Copy-pasteable template:
+
+<div id="app">Loading…</div>
+<script>
+(async () => {
+  const ds = window.ARTIVAULT && window.ARTIVAULT.datasets && window.ARTIVAULT.datasets[0];
+  const el = document.getElementById("app");
+  if (!ds) { el.textContent = "No dataset linked."; return; }
+  try {
+    if (ds.storage === "inline") {
+      const res = await fetch(ds.url);
+      const data = ds.format === "json" ? await res.json() : await res.text();
+      el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    } else {
+      const res = await fetch(ds.queryUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sql: "SELECT name FROM sqlite_master WHERE type = 'table'" })
+      });
+      const { columns, rows } = await res.json();
+      el.textContent = JSON.stringify({ columns, rows }, null, 2);
+    }
+  } catch (err) {
+    el.textContent = "Failed to load dataset: " + err;
+  }
+})();
+</script>
+
+Replace the el.textContent lines with real rendering (a table, a chart, etc.).
+For SQLite, discover tables/columns first with a query against sqlite_master.
+
+Common mistake to avoid: do NOT ship a static placeholder like "Loading..." /
+"Chargement du dataset..." without the fetch-and-render script above — the data
+will never appear.`;
+
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -134,7 +188,11 @@ export function buildMcpServer(user: User): McpServer {
   server.registerTool(
     'create_artifact',
     {
-      description: 'Create an artifact (html, svg, or markdown). Returns its render URL.',
+      description:
+        'Create an artifact (html, svg, or markdown). Returns its render URL. If you ' +
+        'link datasets, their access URLs are injected at render as ' +
+        'window.ARTIVAULT.datasets and your HTML must fetch + render them — call ' +
+        'get_dataset_render_guide for a copy-pasteable template.',
       inputSchema: {
         name: z.string(),
         kind: z.enum(['html', 'svg', 'markdown']),
@@ -488,9 +546,24 @@ export function buildMcpServer(user: User): McpServer {
   );
 
   server.registerTool(
+    'get_dataset_render_guide',
+    {
+      description:
+        'How an artifact reads its linked datasets at render time (the ' +
+        'window.ARTIVAULT contract) with a copy-pasteable HTML template. Read this ' +
+        'before writing HTML for a dataset-backed artifact.',
+      inputSchema: {},
+    },
+    () => ({ content: [{ type: 'text' as const, text: DATASET_RENDER_GUIDE }] }),
+  );
+
+  server.registerTool(
     'link_dataset',
     {
-      description: 'Link a dataset to an artifact.',
+      description:
+        'Link a dataset to an artifact so the artifact can read it at render time ' +
+        'via window.ARTIVAULT.datasets. The artifact HTML must fetch the data — call ' +
+        'get_dataset_render_guide for the exact pattern and a template.',
       inputSchema: { artifactId: z.string(), datasetId: z.string() },
     },
     ({ artifactId, datasetId }) =>
@@ -499,7 +572,18 @@ export function buildMcpServer(user: User): McpServer {
         const { d } = loadDataset(datasetId, 'view');
         linkDataset(a.id, d.id);
         audit('artifact.link_dataset', a.id, { dataset: d.id });
-        return { ok: true };
+        return {
+          ok: true,
+          usage: {
+            injectedGlobal: 'window.ARTIVAULT.datasets',
+            dataset: { id: d.id, name: d.name, storage: d.storage, format: d.format },
+            howTo:
+              d.storage === 'inline'
+                ? `At render, GET this dataset's .url to receive its ${d.format} content, then render it into the DOM.`
+                : "At render, POST this dataset's .queryUrl with JSON { sql } to receive { columns, rows, truncated }.",
+            fullGuide: 'Call get_dataset_render_guide for a copy-pasteable HTML template.',
+          },
+        };
       }),
   );
 
