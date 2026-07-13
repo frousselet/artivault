@@ -2,8 +2,10 @@
 #
 #   1. cp .env.docker.example .env.docker   &&   edit the secrets
 #   2. docker compose up -d --build
-#   3. docker compose exec app node server/dist/cli/create-user.js \
-#        --email you@example.com --admin        # then open the app to add a passkey
+#   3. Create the admin — this prints a single-use invitation link:
+#        docker compose exec app node server/dist/cli/create-user.js \
+#          --email you@example.com --admin
+#      Open that link in a browser to register the passkey, then sign in.
 #
 # App: http://localhost:8787  (change the host port in `ports` below if needed).
 

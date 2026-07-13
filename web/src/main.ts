@@ -1,13 +1,7 @@
 import './style.css';
 import { apiGet, apiPost } from './api.js';
 import { renderApp } from './app.js';
-import {
-  fetchInvite,
-  loginPasskey,
-  registerPasskey,
-  registerWithInvite,
-  type SessionUser,
-} from './auth.js';
+import { fetchInvite, loginPasskey, registerWithInvite, type SessionUser } from './auth.js';
 import { byId } from './dom.js';
 import { icon } from './icons.js';
 
@@ -44,27 +38,11 @@ function signedOutView(): void {
       <div class="auth-card">
         <h1>Welcome back</h1>
         <p class="tag">Sign in to your vault with a passkey.</p>
-        <form id="auth-form" class="auth">
-          <label class="field">Email
-            <input id="email" type="email" autocomplete="username webauthn"
-                   placeholder="you@example.com" required />
-          </label>
-          <button id="login" class="btn block" type="submit">Sign in with a passkey</button>
-          <button id="register" class="btn ghost block" type="button">Register a passkey</button>
-        </form>
+        <button id="login" class="btn block" type="button">Sign in with a passkey</button>
         <p id="msg" class="hint"></p>
       </div>
     </div>`;
-  const email = () => byId<HTMLInputElement>('email')?.value.trim() ?? '';
-  byId('auth-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (email()) void runFlow(() => loginPasskey(email()));
-    else message('Enter your email first.', true);
-  });
-  byId('register')?.addEventListener('click', () => {
-    if (email()) void runFlow(() => registerPasskey(email()));
-    else message('Enter an email to register.', true);
-  });
+  byId('login')?.addEventListener('click', () => void runFlow(() => loginPasskey()));
 }
 
 function parseInviteToken(): string | null {

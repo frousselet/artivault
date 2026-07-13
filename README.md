@@ -92,14 +92,20 @@ cp .env.example .env
 # 3. Apply database migrations (creates data/artivault.db)
 npm run migrate
 
-# 4. Run the backend (http://127.0.0.1:8787)
+# 4. Create the first admin — prints a single-use invitation link
+npm run create-user -- --email you@example.com --admin
+
+# 5. Run the backend (http://127.0.0.1:8787)
 npm run dev
 
-# 5. In another terminal, run the web client with hot reload
+# 6. In another terminal, run the web client with hot reload
 npm run dev:web
 ```
 
-The first registered account becomes the **admin** (bootstrap rule).
+Registration is **invitation-only**. Open the invitation link printed in step 4
+(on the Vite dev origin, `http://localhost:5173/invite/…`) and **Register a
+passkey**. From then on you sign in with a single click — the passkey is
+discoverable, so there is no email or password to type.
 
 ## Run with Docker
 
@@ -115,14 +121,15 @@ cp .env.docker.example .env.docker
 # 2. Build the image and start the container (detached)
 docker compose up -d --build          # → http://localhost:8787
 
-# 3. Create the admin, then open the app to add its passkey
+# 3. Create the admin — this prints a single-use invitation link
 docker compose exec app \
   node server/dist/cli/create-user.js --email you@example.com --admin
 ```
 
-Then browse to `http://localhost:8787`, enter that email and **Register a
-passkey**. Migrations run automatically on start; the SQLite database and
-per-dataset files persist in the `artivault-data` volume.
+Open the printed invitation link (`http://localhost:8787/invite/…`) in your
+browser and **Register a passkey**. From then on, sign in with a single click —
+no email, no password. Migrations run automatically on start; the SQLite database
+and per-dataset files persist in the `artivault-data` volume.
 
 Everyday operations:
 
@@ -131,6 +138,10 @@ docker compose logs -f app            # follow logs
 docker compose up -d --build          # rebuild & restart after pulling changes
 docker compose down                   # stop (keeps the data volume)
 docker compose down -v                # stop and DELETE all data
+
+# User management (each invite command prints a single-use link to open):
+docker compose exec app node server/dist/cli/create-user.js --email new@you.com
+docker compose exec app node server/dist/cli/invite.js --email someone@you.com   # regenerate
 ```
 
 `docker-compose.yml` pins the container invariants (`HOST=0.0.0.0`, `PORT=8787`,
@@ -151,6 +162,8 @@ Run from the repository root:
 | `npm run build` | Type-check and build both workspaces |
 | `npm start` | Run the built backend |
 | `npm run migrate` | Apply pending database migrations |
+| `npm run create-user -- --email <e> [--admin]` | Create an account; prints an invitation link |
+| `npm run invite -- --email <e>` | Regenerate an invitation link for an existing account |
 | `npm run typecheck` | Type-check every workspace |
 | `npm test` | Run tests |
 | `npm run lint` | Lint & format-check with Biome |

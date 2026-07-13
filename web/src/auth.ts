@@ -25,9 +25,9 @@ export async function registerPasskey(email: string): Promise<SessionUser> {
   return result.user;
 }
 
-/** Authenticate with an existing passkey for `email`. */
-export async function loginPasskey(email: string): Promise<SessionUser> {
-  const optionsJSON = await apiPost<AuthenticationOptions>('/api/auth/login/options', { email });
+/** Authenticate with a discoverable passkey — no username needed. */
+export async function loginPasskey(): Promise<SessionUser> {
+  const optionsJSON = await apiPost<AuthenticationOptions>('/api/auth/login/options', {});
   const response = await startAuthentication({ optionsJSON });
   const result = await apiPost<AuthResult>('/api/auth/login/verify', { response });
   return result.user;

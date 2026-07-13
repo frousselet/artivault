@@ -19,6 +19,7 @@
     "start": "npm run start --workspace server",
     "migrate": "npm run migrate --workspace server",
     "create-user": "npm run create-user --workspace server",
+    "invite": "npm run invite --workspace server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "biome check .",

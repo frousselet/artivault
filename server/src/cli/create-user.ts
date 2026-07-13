@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { closeDb, getDb } from '../db/index.js';
 import { runMigrations } from '../db/migrate.js';
+import { buildInviteUrl, createInvitation } from '../services/invitations.js';
 import { createUser, getUserByEmail } from '../services/users.js';
 import type { Role } from '../types/domain.js';
 
@@ -21,7 +22,7 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-const email = values.email?.trim();
+const email = values.email?.trim().toLowerCase();
 if (!email) fail('Missing --email.');
 if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(`Invalid email: ${email}`);
 
@@ -41,24 +42,22 @@ if (values.admin) {
 runMigrations(getDb());
 
 if (getUserByEmail(email)) {
-  console.error(`A user with email ${email} already exists.`);
-  closeDb();
-  process.exit(1);
+  fail(
+    `A user with email ${email} already exists.\n` +
+      `Regenerate its invitation link with:  npm run invite -- --email ${email}`,
+  );
 }
 
 const user = createUser({ email, displayName, role });
 
-console.log('Created user:');
-console.log(
-  JSON.stringify(
-    { id: user.id, email: user.email, display_name: user.display_name, role: user.role },
-    null,
-    2,
-  ),
-);
-console.log(
-  `\nNext: open the app, enter ${email}, and choose "Register a passkey" to\n` +
-    'attach a credential to this account and sign in.',
-);
+// A new account has no passkey yet, and open registration is closed once any user
+// exists — so mint a single-use invitation link. Opening it is how this account
+// registers its first passkey and signs in.
+const { token, invitation } = createInvitation(user.id, user.id);
+const expires = new Date(invitation.expires_at * 1000).toISOString();
+
+console.log(`Created ${user.role} account ${email}.`);
+console.log(`\nInvitation link — single-use, expires ${expires}:\n\n  ${buildInviteUrl(token)}\n`);
+console.log('Open it in a browser to register the passkey for this account and sign in.');
 
 closeDb();
