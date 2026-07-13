@@ -1,0 +1,19 @@
+{
+  "name": "@artivault/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^13.1.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7"
+  }
+}
